@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "api-docs": "node_modules/.bin/api2html -o index.html -l python,shell,javascript--nodejs -c kaptio.png swagger.yaml"
+  },
+  "dependencies": {
+    "api2html": "^0.1.0"
+  }
+}

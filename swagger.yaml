@@ -1,0 +1,2437 @@
+openapi: 3.0.0
+info:
+  version: 0.9.0
+  title: Kaptio REST API
+  description: >
+    This guide presents common use cases for interacting with Kaptio Travel
+    through Kaptio API and Kaptio SF-API. Kaptio API is standalone stateless
+    REST API that can be implemented in any context and programming language.
+    The Kaptio SF-API is a Salesforce native implementation available in Apex,
+    an object oriented programming language that allows developers to execute
+    flow and transaction control statements on Salesforce servers.
+
+    From an implementation perspective, the best way to distinguish between the
+    two is:
+
+    * For any product resource, use Kaptio API. This will ensure highest
+      performance for accessing rates, inventory and content from the Kaptio
+      Travel system. The performance is boosted as Kaptio has built a caching
+      layer (internally referred to as KT-Transform) to better support
+      high-volume traffic.
+
+    * For any customer itinerary resource, use Kaptio SF API. This will allow
+      you to create, read, update and delete anything related to a specifi
+      customer itinerary that is sitting directly in the Kaptio Travel system.
+
+    To make it easier for developers with limited Salesforce experience to
+    develop against both product and customer itinerary resources, the Kaptio
+    API offers a “relay” into the Kaptio SF API. This means that you only need
+    to authenticate against Kaptio API, and for any customer itinerary resource
+    related implementation you can use the relay service and bypass the need to
+    become acquainted with Apex and Salesforce API authentication.
+
+    # Customer Lifecycle Use Cases
+
+    Use cases are grouped in sections based on the lifecycle of a customer.
+    These sections are by no means mutually exclusive. Integrations may mix and
+    match use cases for the desired implementation that works best for the
+    applicable requirements. The key use cases we examine in this guide are:
+
+    * In *Search Product*, we review how to perform a product search against
+      various product resources.
+
+    * In *Product Configuration*, we highlight how to configure product
+      resources to get the applicable rates, inventory and content based on a
+      customers preference and selection.
+
+    * In *Creating Package Itineraries, *we examine the core functionality for
+      creating a booking with packages.
+
+    * In *Creating Custom Itineraries, *we identify use cases where we book
+      standalone items either as additions to a package booking or individually.
+
+    * In *Repeat Customer Itineraries*, we look at how to support a repeat
+      customer booking
+
+    * In *Manage Customer Itinerary, *we look at how to get full booking data,
+      cancel/expire bookings, update passenger info etc.
+
+
+
+
+
+    This page presents the Kaptio REST API documentation. From now on we will
+    refer
+
+    to Kaptio REST API as 'KTAPI'. The system is based on REST principles and
+    uses JSON
+
+    as its serialization format. It is currently in beta state, which means some
+
+    aspects might change and new paths/web service endpoints will be added in
+    the
+
+    future.
+
+
+    ## Authentication
+
+    The API is completely stateless (no login/logout), hence all requests to the
+    API
+
+    must contain authentication information. We provide two authentication
+    backends,
+
+    which are allow you to access the API from various private and public
+    systems.
+
+
+    ### Keypair Authentication
+
+    You will receive a key pair consisting of API key and secret, for example:
+
+        API key:    11111111-2222-bbbb-dddd-777777ffffff
+        API secret: 1234abcd-5678-ef90-1234-abcdef987654
+
+    Please treat these key pairs carefully and do **not(!)** disclose them to
+    third parties
+
+    (especially the secret)! Every authenticated request must contain an
+
+    `Authorization` header with the value:
+
+        Keypair key="YOUR API_KEY" secret="YOUR API_SECRET"
+
+    Based on the example key pair above, the header field would be as follows:
+
+        Authorization: Keypair key="11111111-2222-bbbb-dddd-777777ffffff" secret="1234abcd-5678-ef90-1234-abcdef987654"
+
+    You can also request additional key pairs from Kaptio for cases when you
+
+    access KTAPI from different systems. That way, if the key pair for one of
+    your
+
+    systems gets compromised, it is possible to invalidate that single key pair
+
+    without you having to change the credentials on all your servers.
+
+
+    Be aware that you can perform all possible requests and there are no
+
+    restrictions with those api credentials. If you want to grant only certain
+
+    permissions to the API user (e.g. a web app), you can use the Expiry Token
+
+    authentication method.
+
+
+    ### Expiry Token Authentication
+
+    The Expiry Token Authentication enables you to issue access to users if you
+
+      a. want to give access only for a limited time, or
+      b. provide access to a certain set of features only.
+
+    To generate an expiry token, you need your keypair from the previous
+    section,
+
+    an expiry date and a permission role, for example:
+
+        API key:          11111111-2222-bbbb-dddd-777777ffffff
+        API secret:       1234abcd-5678-ef90-1234-abcdef987654
+        Expiry date:      2030-12-31T23:59:59
+        Permission Role:  kaptio.roles.Admin
+
+    The API key, expiry date and permission role are used to create a signing
+
+    string, separated by pipes |.
+
+        11111111-2222-bbbb-dddd-777777ffffff|2030-12-31T23:59:59|kaptio.roles.Admin
+
+    This string is signed using HMAC-SHA256 with the API secret as secret. We
+    are
+
+    using the hexadecimal digest of the signature. For the above example, the
+    digest
+
+    would be
+
+        5171ec399d4c6b4d286546d96b8832f95fd3a847d674a3ddd1549874ec715fe0
+
+    The API key, expiry date, permission role and digest can be used for
+
+    authorization until the expiration date is reached. Since your user does not
+
+    have access to the API secret, he cannot use the API after this date.
+
+
+    The respective header authorization field would be as follows:
+
+        Authorization: ExpiryKey key="11111111-2222-bbbb-dddd-777777ffffff" expires="2030-12-31T23:59:59"  role="kaptio.roles.Admin" hmac256="5171ec399d4c6b4d286546d96b8832f95fd3a847d674a3ddd1549874ec715fe0"
+
+    For test and development reasons, you can use the following API endpoint to
+
+    generate Expiry Tokens. For production systems we recommend to use a
+
+    system-dependent implementation of HMAC-SHA256.
+
+        curl -X POST \
+          http://api.kaptio.com/v1.0/auth/expirytokens \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "public_key": "11111111-2222-bbbb-dddd-777777ffffff",
+            "secret_key": "1234abcd-5678-ef90-1234-abcdef987654",
+            "expires": "2030-12-31T23:59:59",
+            "role": "kaptio.roles.Admin"
+        }'
+
+    __Apex Implementation__
+
+        String clientKey = 'DE9ED297-313D-4552-A447-426521956F82';
+        String clientSecret = '4AA122A4-B646-470C-802F-306A3D2213AB';
+
+        String expiryDate = '2030-12-31T23:59:59';
+        String userRole = 'kaptio.roles.PriceFinder';
+
+        String signingString = clientKey + '|' + expiryDate + '|' + userRole;
+
+        Blob signatureBlob = crypto.generateMac('HmacSHA256', Blob.valueOf(signingString), Blob.valueOf(clientSecret));
+
+        String signature = EncodingUtil.convertToHex(signatureBlob);
+
+        String authHeader = 'ExpiryKey ' +
+                            'key="' + clientKey + '" ' +
+                            'expires="' + expiryDate + '" ' +
+                            'role="' + userRole + '" ' +
+                            'hmac256="' + signature + '"';
+
+    The `authHeader` string would be used for the HTTP-Authorization header
+
+    value.
+
+
+    ## Available Permission Roles
+
+    We currently provide the following permission roles:
+
+
+    kaptio.roles.Admin        Authenticated users with this role can access all
+                              endpoints, and have full control of all API
+                              functionalities (except of issuing new tokens).
+
+    kaptio.roles.PriceFinder  Authenticated users with this role can access the
+                              ItemPriceFinder only.
+
+    ## Error Responses
+
+    When an incoming request leads to an error, the response is usually
+    JSON-structured
+
+    and contains more information about the error. Typically these
+
+    errors contain three elements:
+
+
+    * `message`: A textual description of the problem
+
+    * `details`: More information about what went wrong. Depending on the
+    request
+       and error type, this could be either a simple string or a nested objected with
+       more information.
+    * `code`: A unique code representing the type of error. This code is
+    returned
+      to help API consumers in case they want to programmatically deal with
+      errors. In those cases it's easier for them to base their logic on a unique
+      error code instead of a textual `message` (which might be changed/clarified
+      in the future).
+
+    An example response might be:
+
+
+    ```json
+
+    {
+      "message": "Element not found",
+      "details": "Unknown id 'ABCD'",
+      "code": 1100
+    }
+
+    ```
+
+
+    ## Pagination
+
+    Some of our REST end-points offer pagination functionality. For example,
+
+    if the result list contains 1000s of elements, it makes sense to return
+    those elements
+
+    in smaller, paginated batch sizes. For a REST API, it is more robust to
+    avoid
+
+    page-size/offset based pagination and go with a
+    cursor-based/continuation-token
+
+    approach instead. Therefore if you request a paginated resource, the results
+    will
+
+    have the structure:
+
+
+    ```json
+
+    {
+      "count": NUMBER_OF_ELEMENTS_IN_THIS_RESULT,
+      "limit": MAX_NUMBER_OF_ELEMENTS_IN_RESULT,
+      "next": URL_TO_NEXT_BATCH (contains data from 'next_token'),
+      "next_token": TOKEN (for next batch),
+      "records": [
+        LIST_OF_RESULT_OBJECTS
+      ]
+    }
+
+    ```
+
+
+    The limit can optionally be specified in the request as a GET-parameter.
+
+    Note that this is not considered binding for the REST end-point.
+
+    The server process can choose to use a different limit for the results! This
+    is an important point:
+
+    The server controls the pagination, not the client. The client can only
+    suggest a limit.
+
+
+    The next-field holds the link to the next batch of results. It already
+    contains the
+
+    continuation token that is returned in the field next_token. If the fields
+    next and next_token
+
+    contain null, that means there are no more result batches left after this
+    response.
+
+
+    ## Remarks
+
+    At the moment, our swagger docs still display lots of fields as (optional).
+    This
+
+    is not accurate since most fields are likely always present. For now, assume
+    that
+
+    even optional fields are always present, unless they contain detailed nested
+    data,
+
+    e.g. the `offered_item_options` within the `ComponentOption`s of a
+    `Package`. In
+
+    those cases, the presence of the attribute depends on which REST endpoint is
+
+    called. For example, the `/packages`-list won't contain these fields,
+    whereas
+
+    a single package at `/packages/{packageId}` will contain all fields.
+
+
+
+    ## Interactive Documentation
+
+    Below you can find all the services that are currently available. The
+    documentation
+
+    not only lists these services but is meant to be used in an interactive way.
+    Thus
+
+    you can experiment with requests and directly see the returned
+    results/errors.
+
+    Before you can execute requests, however, you need to enter an API key pair
+    in the form
+
+    fields at the top of this page. Please ask your contact at Kaptio for a key
+    pair for
+
+    this demo instance, if you don't have one yet.
+tags:
+  - name: channel
+    description: all channel-related services
+  - name: item
+    description: all item-related services
+  - name: item_type
+    description: all item_type-related services
+  - name: language
+    description: all language-related services
+  - name: service_level
+    description: all service level-related services
+  - name: package
+    description: all package-related services
+  - name: allotment_day
+    description: all allotment days-related services
+  - name: client
+    description: client-related services
+  - name: tools
+    description: custom utilities
+  - name: v1.0
+    description: version
+  - name: v2.0
+    description: version
+paths:
+  /v1.0/packages:
+    get:
+      description: |
+        Get all packages as a list. Only the top-level fields of each package
+        and its images are part of the result. The nested `components` and
+        `package_schedules` are not returned in this service.
+      tags:
+        - package
+        - v1.0
+      responses:
+        '200':
+          description: A list of all `Package` objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Package'
+  /v2.0/packages:
+    get:
+      description: >
+        Get packages by limit and continuation_token. Only the top-level fields
+        of each package
+
+        and its images are part of the result. The nested `components` and
+
+        `package_schedules` are not returned in this service.
+      tags:
+        - package
+        - v2.0
+      parameters:
+        - name: limit
+          in: query
+          description: The numbers of items to return
+          schema:
+            type: integer
+            default: 200
+        - name: next
+          in: query
+          description: Continuation token from previous response
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A pagination object with records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginationPage'
+  '/v1.0/packages/{packageId}':
+    get:
+      description: >
+        Get the package with the given id. This returns the full package-data
+        including
+
+        all components, their offered options, package_departures,
+        package_schedules, ...
+
+
+        A package can have three different departure types:
+
+
+        * Anyday (departure_type_id = '0')
+
+        * Seasonal (departure_type_id = '1'). This means the allowed departures
+        are based
+          on a seasonal schedule, which is represented in `package.package_schedules`.
+        * Fixed (departure_type_id = '2'). This means the allowed departures are
+          represented as single dates, with `package.package_departures` as a list of
+          those dates. A `PackageDeparture` in that list is only valid when the value
+          of `active` is `true`.
+      tags:
+        - package
+        - v1.0
+      parameters:
+        - name: packageId
+          in: path
+          description: ID of the package that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested `Package` object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+  '/v1.0/packages/{packageId}/prices':
+    post:
+      description: >
+        Get the prices for the package with the given `packageId` and the
+        parameters specified
+
+        as JSON in the POSTed body.
+
+
+        The parameters contain general information like `channel_id`, `date` and
+        `total_people`.
+
+        In addition, the `components` field must specify the selected
+        item-option
+
+        for every component that the package contains. There are a couple of
+        rules and restrictions
+
+        for that part:
+
+
+        1. For now, the number of people for the selections in a component must
+        be equal to the
+           total number of people specified in `total_people`.
+        2. 'Accommodation' components are the only component where it is allowed
+        to have multiple
+           elements in the `selection` array. That means you can split the total number of people
+           into different rooms, e.g. total_people = 4, with 2 in the double room and 2 in the deluxe room.
+        3. The `item_type_option_id` (this only represents board basis for now)
+        always has to be
+           present as a key in the incoming selection data. For components where board basis doesn't
+           make sense (i.e. everything except Accommodation), set the value for `item_type_option_id`
+           to `null`.
+        4. The returned data contains the original, incoming `parameters` and
+        the calculated `results`.
+
+        5. Besides the `total_price`, the results show a price breakdown per
+        selection as
+           `prices_by_index`. Therefore the given parameter data must specify a unique integer index
+           for each selected option. That index is then referenced in the result data. For example:
+           ```json
+           {
+             "parameters": { ... },
+             "results": {
+                 "total_price": {
+                     "tax": "599.22",
+                     "net": "3030.00",
+                     "sales": "3753.00",
+                     "currency": "EUR",
+                     "sales_discount": "0",
+                     "net_discount": "-210.00",
+                     "supplier_price": null
+                 },
+                 "prices_by_index": [
+                     {
+                         "index": 2,
+                         "price": {
+                             "currency": "EUR",
+                             "sales_discount": "0",
+                             "supplier_price": {
+                                 "total": "490.00",
+                                 "currency_iso_code": "EUR"
+                             },
+                             "net_discount": "-210.00",
+                             "net": "490.00",
+                             "tax": "97.17",
+                             "sales": "608.58"
+                         }
+                     },
+                     {
+                         "index": 4,
+                         "price": { ... }
+                     },
+                     {
+                         "index": 3,
+                         "price": { ... }
+                     }
+                 ]
+             }
+           }
+           ```
+        6. The `supplier_price` in the result prices only contains values for
+        the original
+           inner prices_by_index. For the total price, that value will be `null`.
+      tags:
+        - package
+        - v1.0
+      parameters:
+        - name: packageId
+          in: path
+          description: ID of the package that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The pricing data for the given parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    $ref: '#/components/schemas/PackagePricingResult'
+                  parameters:
+                    $ref: '#/components/schemas/PackagePricingParameters'
+                required:
+                  - results
+                  - parameters
+        '400':
+          description: Error response in case of a request with bad parameters.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PackagePricingParameters'
+        description: All the request parameters that determine the pricing.
+        required: true
+  '/v2.0/packages/{packageId}/prices':
+    post:
+      description: >
+        Get the prices with alternatives for the package with the given
+        `packageId` and the
+
+        parameters specified as JSON in the POSTed body.
+
+
+        The parameters contain general information like `channel_id`, `date` and
+        `total_people`.
+
+        In addition, the `components` field must specify the selected
+        item-option
+
+        for every component that the package contains and also alternative
+        selections.
+
+        There are a couple of rules and restrictions for that part:
+
+
+        1. For now, the number of people for the selections in a component must
+        be equal to the
+           total number of people specified in `total_people`.
+        2. 'Accommodation' components are the only component where it is allowed
+        to have multiple
+           elements in the `selection` array. That means you can split the total number of people
+           into different rooms, e.g. total_people = 4, with 2 in the double room and 2 in the deluxe room.
+        3. The `item_type_option_id` (this only represents board basis for now)
+        always has to be
+           present as a key in the incoming selection data. For components where board basis doesn't
+           make sense (i.e. everything except Accommodation), set the value for `item_type_option_id`
+           to `null`.
+        4. The returned data contains the original, incoming `parameters` and
+        the calculated `results`.
+
+        5. Besides the `total_price`, the results show a price breakdown per
+        selection as
+           `prices_by_index`. Therefore the given parameter data must specify a unique integer index
+           for each selected option. That index is then referenced in the result data. For example:
+           ```json
+           {
+            "channel_id": "a13b000000ApZXCAA3",
+            "total_people": 1,
+            "date": "2018-06-16",
+            "components": [
+              {
+                "selection": [
+                  {
+                    "item_type_option_id": "a1yb0000000kJsDAAU",
+                    "index": 0,
+                    "item_option_id": "a1Kb0000002FbJvEAK",
+                    "guests": 1
+                  }
+                ],
+                "component_id": "a230X000002rxIhQAI"
+              },
+              {
+                "component_id": "a230X000002rxIeQAI",
+                "alternatives": [
+                  {
+                    "guests": 1,
+                    "item_option_id": "a1Kb0000003KyFPEA0",
+                    "item_type_option_id": "",
+                    "index": 1
+                  },
+                  {
+                    "guests": 1,
+                    "item_option_id": "a1Kb0000003KyFQEA0",
+                    "item_type_option_id": "",
+                    "index": 2
+                  },
+                  {
+                    "guests": 1,
+                    "item_option_id": "a1Kb0000003KyFREA0",
+                    "item_type_option_id": "",
+                    "index": 3
+                  },
+                  {
+                    "guests": 1,
+                    "item_option_id": "a1Kb0000002LdsCEAS",
+                    "item_type_option_id": "",
+                    "index": 4
+                  }
+                ]
+              }
+            ]
+          }
+           ```
+        6. The `supplier_price` in the result prices only contains values for
+        the original
+           inner prices_by_index. For the total price, that value will be `null`.
+      tags:
+        - package
+        - v2.0
+      parameters:
+        - name: packageId
+          in: path
+          description: ID of the package that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The pricing data for the given parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  original_result:
+                    $ref: '#/components/schemas/PackagePricingResult'
+                  results_by_index:
+                    $ref: '#/components/schemas/PackagePricingResultsByIndex'
+                required:
+                  - original_result
+                  - results_by_index
+        '400':
+          description: Error response in case of a request with bad parameters.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PackagePricingWithAlternativesParameters'
+        description: All the request parameters that determine the pricing.
+        required: true
+  /v1.0/channels:
+    get:
+      description: Get all configured channels.
+      tags:
+        - channel
+        - v1.0
+      parameters:
+        - name: code
+          in: query
+          description: The channel code
+          required: false
+          schema:
+            type: string
+        - name: name
+          in: query
+          description: The channel name (exact match!)
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of all `Channel` objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
+  /v2.0/channels:
+    get:
+      description: Get channels by limit and continuation_token.
+      tags:
+        - channel
+        - v2.0
+      parameters:
+        - name: limit
+          in: query
+          description: The numbers of items to return
+          schema:
+            type: integer
+            default: 200
+        - name: next
+          in: query
+          description: Continuation token from previous response
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A pagination object with records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginationPage'
+  '/v1.0/channels/{channelId}':
+    get:
+      description: Get the channel with the given id.
+      tags:
+        - channel
+        - v1.0
+      parameters:
+        - name: channelId
+          in: path
+          description: ID of the channel that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested `Channel` object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+  /v1.0/item_types:
+    get:
+      description: Get all configured item types.
+      tags:
+        - item_type
+        - v1.0
+      responses:
+        '200':
+          description: A list of all `ItemType` objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ItemType'
+  '/v1.0/item_types/{itemTypeId}':
+    get:
+      description: Get the item type with the given id.
+      tags:
+        - item_type
+        - v1.0
+      parameters:
+        - name: itemTypeId
+          in: path
+          description: ID of the item type that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested `ItemType` object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemType'
+  /v1.0/languages:
+    get:
+      description: Get all configured languages.
+      tags:
+        - language
+        - v1.0
+      parameters:
+        - name: iso_code
+          in: query
+          description: The language code
+          required: false
+          schema:
+            type: string
+        - name: name
+          in: query
+          description: The language name (exact match!)
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of all `Language` objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Language'
+  /v2.0/languages:
+    get:
+      description: Get languages by limit and continuation_token.
+      tags:
+        - language
+        - v2.0
+      parameters:
+        - name: limit
+          in: query
+          description: The numbers of items to return
+          schema:
+            type: integer
+            default: 200
+        - name: next
+          in: query
+          description: Continuation token from previous response
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A pagination object with records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginationPage'
+  '/v1.0/languages/{languageId}':
+    get:
+      description: Get the language with the given id.
+      tags:
+        - language
+        - v1.0
+      parameters:
+        - name: languageId
+          in: path
+          description: ID of the language that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested `Language` object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Language'
+  /v1.0/service_levels:
+    get:
+      description: Get all configured service levels.
+      tags:
+        - service_level
+        - v1.0
+      parameters:
+        - name: name
+          in: query
+          description: The service level name (exact match!)
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of all `ServiceLevel` objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceLevel'
+  /v2.0/service_levels:
+    get:
+      description: Get service levels by limit and continuation_token.
+      tags:
+        - service_level
+        - v2.0
+      parameters:
+        - name: limit
+          in: query
+          description: The numbers of elements to return
+          schema:
+            type: integer
+            default: 200
+        - name: next
+          in: query
+          description: Continuation token from previous response
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A pagination object with records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginationPage'
+  '/v1.0/service_levels/{serviceLevelId}':
+    get:
+      description: Get the language with the given id.
+      tags:
+        - service_level
+        - v1.0
+      parameters:
+        - name: serviceLevelId
+          in: path
+          description: ID of the service level that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested `ServiceLevel` object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceLevel'
+  /v1.0/items:
+    get:
+      description: |
+        Get all items as a list. Only the top-level fields of each item
+        are part of the result. All objects nested within each item like
+        `item_options`, `type_options`, ... are not returned in this service.
+      tags:
+        - item
+        - v1.0
+      responses:
+        '200':
+          description: A list of all `Item` objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Item'
+  /v2.0/items:
+    get:
+      description: Get items by limit and continuation_token.
+      tags:
+        - item
+        - v2.0
+      parameters:
+        - name: limit
+          in: query
+          description: The numbers of items to return
+          schema:
+            type: integer
+            default: 200
+        - name: next
+          in: query
+          description: Continuation token from previous response
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A pagination object with records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginationPage'
+  '/v1.0/items/{itemId}':
+    get:
+      description: >
+        Get the item with the given id. This returns the full item-data
+        including
+
+        all nested objects like `item_options`, `type_options`, ... .
+      tags:
+        - item
+        - v1.0
+      parameters:
+        - name: itemId
+          in: path
+          description: ID of the item that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested `Item` object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+  '/v1.0/items/{itemId}/inventory':
+    post:
+      description: >
+        Get the inventory for the item with the given `itemID` and the
+        parameters specified
+
+        as JSON in the POSTed body.
+
+
+        The parameters must contain an `item_option_id` and an interval
+        (`date_from` and `date_to`).
+
+
+        Optionally, you can specify `channel_id`, `package_id` and `account_id`,
+        so the inventory
+
+        will be determined in the context of those values. For example, some
+        item inventory might
+
+        only be available when that item is booked as part of a package. In that
+        case the
+
+        presence/absence of the optional field `package_id` affects whether that
+        inventory
+
+        is available or not.
+
+
+
+        The optional field `flex_days` adds additional flexibility to the query.
+        If given, the service computes inventories for all possible bookings of
+        *same length*  within the `flex_days` days *after* `date_from`, i.e.,
+        *earliest booking* equals
+
+        `date_from` and *latest booking* equals `date_from+flex_days`.
+
+
+        Please note that `flex_days` *must be smaller* than 60 days and is
+        optional - it defaults to zero.
+
+
+        The returned data contains the calculated inventories as an array. It
+        contains as many inventories as booking dates are queried
+
+        (i.e., 1 if `flex_days` is omitted, 2 if `flex_days` equals one, etc.).
+
+        Together with the `inventory`, the `request` holds the booking dates
+        (`date_from` and `date_to`).
+
+
+        In the result data, the most important field is the `bookable` field,
+        which shows
+
+        whether the requested inventory is available or not. The other result
+        fields only provide
+
+        extra detail.
+      tags:
+        - item
+        - v1.0
+      parameters:
+        - name: itemId
+          in: path
+          description: ID of the item that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The pricing data for the given parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemInventoryResult'
+        '400':
+          description: Error response in case of a request with bad parameters.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemInventoryParameters'
+        description: All the request parameters that determine the inventory.
+        required: true
+  '/v1.0/items/{itemId}/inventory/many':
+    post:
+      description: >
+        Get the inventory for the item with the given `itemID` and the
+        parameters specified
+
+        as JSON in the POSTed body. This is a more flexible extension of the
+        `inventory` service where
+
+        multiple dates ranges can be specified.
+
+
+        The parameters must contain an `item_option_id` and a list of intervals
+        (`date_from` and `date_to`).
+
+        Note that the `flex_days` field is *not* supported. The remaining
+        parameters and the return data
+
+        matches the specification of the `inventory` service. For a detailed
+        description, please refer to the
+
+        `/items/{itemId}/inventory` service.
+      tags:
+        - item
+        - v1.0
+      parameters:
+        - name: itemId
+          in: path
+          description: ID of the item that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The pricing data for the given parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemInventoryResult'
+        '400':
+          description: Error response in case of a request with bad parameters.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemInventoryManyParameters'
+        description: All the request parameters that determine the inventory.
+        required: true
+  '/v1.0/items/{itemId}/prices':
+    post:
+      description: >
+        Get the prices for the item with the given `itemID` and the parameters
+        specified
+
+        as JSON in the POSTed body.
+
+
+        The parameters contain general information like `channel_id` and
+        `quantity` (e.g., the number of persons).
+
+        In addition, the `date_from` and `date_to` fields specify an exact
+        booking interval. The optional field
+
+        `flex_daysflex_days` adds additional flexibility to the query. If given,
+        the service computes prices and (availability)
+
+        for all possible bookings of *same length* (and same daily hours) within
+        the `flex_days` days *after* `date_from`, i.e., *earliest booking*
+        equals
+
+        `date_from` and *latest booking* equals `date_from+flex_days`.
+
+
+        Please note that `flex_days` *must be smaller* than 60 days and is
+        optional - it defaults to zero.
+
+
+        The returned data contains the original, incoming `parameters`
+        (including the default values) and the calculated
+
+        prices in `results` as an array. It contains as many prices as booking
+        dates are queried (i.e, 1 if `flex_days` is omitted, 2 if `flex_days`
+        equals one, etc.).
+
+        Together with the `price`, the `request` holds the booking dates
+        (`date_from` and `date_to`) and a `notification` object. In case the
+        item is not
+
+        available in the respective booking range, the `notification` object
+        shows which days are not available in the `dates` array, and the `price`
+        field is set to
+
+        `null`. Therefore, either `notification` is empty *or* `price` equals
+        `null`. The `price` object itself is similarily structured as for
+
+        `package price`.
+
+
+        A response body will look like this:
+
+        ```json
+
+        {
+          "params": {
+            "quantity": 1,
+            "item_type_option_id": "a04580000048KO9AAM",
+            "channel_id": "a07580000032c7hAAA",
+            "item_option_id": "a0p580000015l04AAA",
+            "date_from": "2016-09-15T08:00:00",
+            "date_to": "2016-09-17T00:00:00",
+            "flex_days": 1
+          },
+          "results": [
+            {
+              "price": {
+                "currency_iso_code": "EUR",
+                "net": "200.00",
+                "supplier_price": {
+                  "currency_iso_code": "EUR",
+                  "total": "200.00"
+                },
+                "net_discount": "0.00",
+                "tax": "41.51",
+                "sales_discount": "0.00"
+              },
+              "request": {
+                "date_from": "2016-09-16T08:00:00",
+                "date_to": "2016-09-18T00:00:00"
+              },
+              "notifications": []
+            },
+            {
+              "price": null,
+              "request": {
+                "date_from": "2016-09-15T08:00:00",
+                "date_to": "2016-09-17T00:00:00"
+              },
+              "notifications": [
+                {
+                  "message": "Price(s) for the following day(s) were not found:",
+                  "dates": [
+                    "2016-09-15"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+
+        ```
+      tags:
+        - item
+        - v1.0
+      parameters:
+        - name: itemId
+          in: path
+          description: ID of the item that is requested.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The pricing data for the given parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    $ref: '#/components/schemas/ItemPricingResult'
+                  parameters:
+                    $ref: '#/components/schemas/ItemPricingParameters'
+                required:
+                  - results
+                  - parameters
+        '400':
+          description: Error response in case of a request with bad parameters.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemPricingParameters'
+        description: All the request parameters that determine the pricing.
+        required: true
+  /v1.0/items/price_finder:
+    post:
+      description: |
+        Return available prices for selected items or item options matching
+        the specified search criterias.
+
+        The request body has the following structure:
+        ```json
+        {
+          "page": 0,
+          "page_size": 10,
+          "fields": null,
+          "item_option_board_basis_ids":[["a0c24000002yDErAAM", "a0324000007B8XLAA0"]],
+          "date_from": {
+            "earliest": "2017-09-28",
+            "latest": "2017-10-05"
+          },
+          "booking_date": {
+            "earliest": "2017-04-01",
+            "latest": "2017-09-15"
+          },
+          "allocation": {
+            "minimum": 2,
+            "maximum": 10
+          },
+          "quantity": {
+            "minimum": 1,
+            "maximum": 2
+          },
+          "channel_ids": null,
+          "currency_codes": null,
+          "price_list_ids": null,
+          "price_group_ids": null,
+          "customer_ids": null
+        }
+        ```
+      tags:
+        - item
+        - v1.0
+      responses:
+        '200':
+          description: The pricing data for the given parameters.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemPriceFinderParameters'
+        description: >-
+          All the request parameters that specify the item price search. You can
+          specify the fields which should be returned in the json and exported
+          results via the `fields` parameter. Available options are `net.total`,
+          `net.estimated`, `sales.total`, `sales.estimated`, `rate_codes`,
+          `tax_percent`, `item.id`, `item.name`, `item_option.id`,
+          `item_option.name`, `board_basis.id`, `board_basis.name`, `currency`,
+          `channel.id`, `channel.name`, `booking_date`, `customer.id`,
+          `customer.name`, `price_group.id`, `price_group.name`, `date_from`,
+          `date_to`, `price_list.id`, `price_list.name`, `quantity`
+        required: true
+  /v2.0/allotment_days:
+    get:
+      description: Get languages by limit and continuation_token.
+      tags:
+        - allotment_day
+        - v2.0
+      parameters:
+        - name: limit
+          in: query
+          description: The numbers of items to return
+          schema:
+            type: integer
+            default: 200
+        - name: next
+          in: query
+          description: Continuation token from previous response
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A pagination object with records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginationPage'
+  /v1.0/client/config:
+    get:
+      description: Get the client's configuration.
+      tags:
+        - client
+        - v1.0
+      responses:
+        '200':
+          description: >-
+            An object containing the client configuration. Specifically, it
+            lists which `ItemOption` fields are relevant for which item type
+            (indexed by `item_type_id`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ITEM_TYPES:
+                    type: object
+                required:
+                  - ITEM_TYPES
+  /v1.0/rest_relay:
+    post:
+      description: >
+        Send a REST request to KaptioTravel and return the result.
+
+
+        Supported methods are GET, POST and HEAD. The url parameter defines the
+        custom rest endpoint.
+
+        For example, a json-body like this:
+
+
+        ```json
+
+        {
+            "method": "GET",
+            "url": "hello_world"
+        }
+
+        ```
+
+        will call a GET on
+        `https://YOUR_INSTANCE.salesforce.com/services/apexrest/hello_world`.
+
+
+        Note that the URL given in the json body should be without a leading
+        ``/`` because the relay
+
+        service will add that automatically.
+
+
+        For POST requests, the json objects needs to contain an additional field
+        `body`, which
+
+        is expected to hold a string. If you need to send complex data in the
+        body, you can
+
+        represent it as an encoded/stringified JSON string.
+      tags:
+        - tools
+        - v1.0
+      responses:
+        '200':
+          description: The result of the rest call. Probably a JSON.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestRelayParameters'
+        description: The request parameters.
+        required: true
+servers:
+  - url: /
+components:
+  schemas:
+    RestRelayParameters:
+      type: object
+      properties:
+        method:
+          type: string
+        url:
+          type: string
+        body:
+          type: string
+      required:
+        - method
+        - url
+    Package:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        commission_group:
+          type: string
+        discount_group:
+          type: string
+        departure_type_id:
+          type: string
+        departure_type_name:
+          type: string
+        external_name:
+          type: string
+        active:
+          type: boolean
+        length:
+          type: integer
+        net_price_setup_id:
+          type: string
+        prepackaged_single_supplier:
+          type: boolean
+        record_type_id:
+          type: string
+        sales_price_setup_id:
+          type: string
+        supplier_id:
+          type: string
+        description:
+          type: string
+        day_rate:
+          type: boolean
+        primary_pricing_component_id:
+          type: string
+        secondary_pricing_component_id:
+          type: string
+        primary_component_amount:
+          type: string
+        secondary_component_amount:
+          type: string
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/Component'
+        package_departures:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageDeparture'
+        package_schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageSchedule'
+        service_levels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceLevel'
+      required:
+        - id
+        - name
+        - length
+        - active
+    Component:
+      type: object
+      properties:
+        id:
+          type: string
+        item_type_id:
+          type: string
+        name:
+          type: string
+        allow_any_option:
+          type: boolean
+        max_times:
+          type: integer
+        start_day:
+          type: integer
+        end_day:
+          type: integer
+        behavior_id:
+          type: string
+        behavior:
+          type: string
+        selection_type_id:
+          type: string
+        selection_type_name:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComponentOption'
+        item_type:
+          $ref: '#/components/schemas/ItemType'
+      required:
+        - id
+        - item_type_id
+        - name
+        - max_times
+        - start_day
+        - end_day
+    ComponentOption:
+      type: object
+      properties:
+        id:
+          type: integer
+        item_id:
+          type: string
+        position:
+          type: integer
+        item:
+          $ref: '#/components/schemas/Item'
+        offered_item_options:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferedItemOption'
+        offered_item_type_options:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferedItemTypeOption'
+        offered_add_ons:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferedAddOn'
+      required:
+        - id
+        - item_id
+        - position
+    PackagePricingParameters:
+      type: object
+      properties:
+        channel_id:
+          type: string
+        date:
+          type: string
+          format: date
+        total_people:
+          type: integer
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComponentSelection'
+      required:
+        - channel_id
+        - date
+        - total_people
+        - components
+    PackagePricingWithAlternativesParameters:
+      type: object
+      properties:
+        channel_id:
+          type: string
+        date:
+          type: string
+          format: date
+        total_people:
+          type: integer
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComponentWithAlternativesSelection'
+      required:
+        - channel_id
+        - date
+        - total_people
+        - components
+    ComponentSelection:
+      type: object
+      properties:
+        component_id:
+          type: string
+        selection:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectedOption'
+      required:
+        - component_id
+        - selection
+    ComponentWithAlternativesSelection:
+      type: object
+      properties:
+        component_id:
+          type: string
+        selection:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectedOption'
+        alternatives:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlternativeOption'
+      required:
+        - component_id
+        - selection
+        - alternatives
+    SelectedOption:
+      type: object
+      properties:
+        index:
+          type: integer
+        guests:
+          type: integer
+        item_option_id:
+          type: string
+        item_type_option_id:
+          type: string
+      required:
+        - index
+        - guests
+        - item_option_id
+        - item_type_option_id
+    AlternativeOption:
+      type: object
+      properties:
+        index:
+          type: integer
+        guests:
+          type: integer
+        item_option_id:
+          type: string
+        item_type_option_id:
+          type: string
+      required:
+        - index
+        - guests
+        - item_option_id
+        - item_type_option_id
+    PackagePricingResult:
+      type: object
+      properties:
+        total_price:
+          $ref: '#/components/schemas/Price'
+        prices_by_index:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              price:
+                $ref: '#/components/schemas/Price'
+      required:
+        - total_price
+        - prices_by_index
+    PackagePricingResultsByIndex:
+      type: array
+      items:
+        $ref: '#/components/schemas/PackagePricingResultWithIndex'
+    PackagePricingResultWithIndex:
+      type: object
+      properties:
+        indexes:
+          type: array
+          items:
+            type: integer
+        total_price:
+          $ref: '#/components/schemas/Price'
+        prices_by_index:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              price:
+                $ref: '#/components/schemas/Price'
+      required:
+        - indexes
+        - total_price
+        - prices_by_index
+    Price:
+      type: object
+      properties:
+        sales:
+          type: string
+          example: '3753.00'
+        tax:
+          type: string
+          example: '599.22'
+        net:
+          type: string
+          example: '3030.00'
+        sales_discount:
+          type: string
+          example: '0'
+        net_discount:
+          type: string
+          example: '-210.00'
+        currency:
+          type: string
+          example: EUR
+        supplier_price:
+          $ref: '#/components/schemas/SupplierPrice'
+      required:
+        - sales
+        - tax
+        - net
+        - sales_discount
+        - net_discount
+        - currency
+        - supplier_price
+    SupplierPrice:
+      type: object
+      properties:
+        total:
+          type: string
+          example: '351212.00'
+        currency_iso_code:
+          type: string
+          example: ISK
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+        item_type_id:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        charge_24_hours:
+          type: boolean
+        check_in_time:
+          type: string
+        check_out_time:
+          type: string
+        discount_group_id:
+          type: string
+        external_name:
+          type: string
+        featured_image_url:
+          type: string
+        geo_tag_lat:
+          type: number
+          format: double
+        geo_tag_long:
+          type: number
+          format: double
+        time_schedules_enabled:
+          type: boolean
+        multi_day:
+          type: boolean
+        itinerary_title:
+          type: string
+        rating:
+          type: string
+        short_description:
+          type: string
+        supplier_id:
+          type: string
+        tags:
+          type: string
+        tax_group_id:
+          type: string
+        transfer_type:
+          type: string
+        voucher_message:
+          type: string
+        active:
+          type: boolean
+        placeholder_item:
+          type: boolean
+        destination_country:
+          type: string
+        destination_county:
+          type: string
+        destination_region:
+          type: string
+        destination_sales_region:
+          type: string
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+        contents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemContent'
+        type_options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemTypeOption'
+        item_options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemOption'
+        add_ons:
+          type: array
+          items:
+            $ref: '#/components/schemas/AddOn'
+      required:
+        - id
+        - item_type_id
+    ItemPriceFinderParameters:
+      type: object
+      properties:
+        page:
+          type: integer
+        page_size:
+          type: integer
+        item_ids:
+          type: array
+          items:
+            type: string
+        item_option_ids:
+          type: array
+          items:
+            type: string
+        date_from:
+          type: object
+          properties:
+            earliest:
+              type: string
+            latest:
+              type: string
+        booking_date:
+          type: object
+          properties:
+            earliest:
+              type: string
+            latest:
+              type: string
+        allocation:
+          type: object
+          properties:
+            minimum:
+              type: integer
+            maximum:
+              type: integer
+        quantity:
+          type: object
+          properties:
+            minimum:
+              type: integer
+            maximum:
+              type: integer
+        channel_ids:
+          type: array
+          items:
+            type: string
+        currency_codes:
+          type: array
+          items:
+            type: string
+        price_list_ids:
+          type: array
+          items:
+            type: string
+        price_group_ids:
+          type: array
+          items:
+            type: string
+        customer_ids:
+          type: array
+          items:
+            type: string
+    ItemPricingParameters:
+      type: object
+      properties:
+        channel_id:
+          type: string
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        flex_days:
+          type: integer
+        quantity:
+          type: integer
+        item_option_id:
+          type: string
+        item_type_option_id:
+          type: string
+      required:
+        - channel_id
+        - date_from
+        - date_to
+        - quantity
+        - item_option_id
+    ItemPricingResult:
+      type: array
+      items:
+        type: object
+        properties:
+          notifications:
+            type: array
+            items:
+              type: object
+              properties:
+                dates:
+                  type: array
+                  items:
+                    type: string
+                    format: date
+                message:
+                  type: string
+              required:
+                - dates
+                - message
+          price:
+            $ref: '#/components/schemas/SupplierPrice'
+          request:
+            type: object
+            properties:
+              date_from:
+                type: string
+                format: date
+              date_to:
+                type: string
+                format: date
+            required:
+              - date_from
+              - date_to
+        required:
+          - notifications
+          - price
+          - request
+    ItemInventoryParameters:
+      type: object
+      properties:
+        item_option_id:
+          type: string
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        channel_id:
+          type: string
+        package_id:
+          type: string
+        account_id:
+          type: string
+        flex_days:
+          type: integer
+      required:
+        - item_option_id
+        - date_from
+        - date_to
+    ItemInventoryManyParameters:
+      type: object
+      properties:
+        item_option_id:
+          type: string
+        dates:
+          type: array
+          items:
+            type: object
+            properties:
+              date_from:
+                type: string
+                format: date
+              date_to:
+                type: string
+                format: date
+            required:
+              - date_from
+              - date_to
+        channel_id:
+          type: string
+        package_id:
+          type: string
+        account_id:
+          type: string
+      required:
+        - item_option_id
+        - dates
+    ItemInventoryResult:
+      type: array
+      items:
+        type: object
+        properties:
+          inventory:
+            type: object
+            properties:
+              bookable:
+                type: boolean
+              max_quantity_bookable:
+                type: integer
+              setup_id:
+                type: string
+              master_status:
+                type: string
+            required:
+              - bookable
+              - max_quantity_bookable
+              - setup_id
+              - master_status
+          price:
+            type: object
+            properties:
+              date_from:
+                type: string
+                format: date
+              date_to:
+                type: string
+                format: date
+            required:
+              - date_from
+              - date_to
+        required:
+          - price
+          - inventory
+    ItemType:
+      type: object
+      properties:
+        id:
+          type: string
+        type_option_group_name:
+          type: string
+        item_option_group_name:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemTypeOption'
+      required:
+        - id
+        - type_option_group_name
+        - item_option_group_name
+    ItemTypeOption:
+      type: object
+      properties:
+        id:
+          type: string
+        type_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        external_name:
+          type: string
+        position:
+          type: integer
+      required:
+        - id
+        - type_id
+        - name
+        - description
+        - external_name
+        - position
+    OfferedItemTypeOption:
+      type: object
+      properties:
+        default:
+          type: boolean
+        item_type_option:
+          $ref: '#/components/schemas/ItemTypeOption'
+      required:
+        - default
+        - item_type_option
+    ItemOption:
+      type: object
+      description: |
+        The option-data for the item that this `ItemOption` belongs to.
+        Besides the properties below, the object will contain additional
+        properties, for example: `max_adults` (for hotel rooms),
+        `transmission_type` (for car rentals) or `ticket_type`
+        (for activities). The actual set of given properties depends
+        on the item-type and is configured/fixed globally for the
+        organisation.
+      properties:
+        id:
+          type: string
+        item_id:
+          type: string
+        name:
+          type: string
+        external_name:
+          type: string
+        position:
+          type: integer
+        unit_of_measure:
+          type: string
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+        contents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemContent'
+      required:
+        - id
+        - item_id
+        - name
+        - external_name
+        - position
+        - unit_of_measure
+        - images
+        - contents
+    Image:
+      type: object
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        url:
+          type: string
+        tags:
+          type: string
+      required:
+        - id
+        - filename
+        - url
+        - tags
+    ItemContent:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        content:
+          type: string
+        language_iso_code:
+          type: string
+        stage_types:
+          type: string
+        subtitle:
+          type: string
+        title:
+          type: string
+      required:
+        - id
+        - name
+        - content
+        - language_iso_code
+        - stage_types
+        - subtitle
+        - title
+    OfferedItemOption:
+      type: object
+      properties:
+        default:
+          type: boolean
+        position:
+          type: integer
+        price_list_id:
+          type: string
+        service_level_id:
+          type: string
+        item_option:
+          $ref: '#/components/schemas/ItemOption'
+      required:
+        - default
+        - position
+        - price_list_id
+        - service_level_id
+        - item_option
+    AddOn:
+      type: object
+      description: |
+        Information about an AddOn for an Item.
+      properties:
+        id:
+          type: string
+        item_id:
+          type: string
+        currency_iso_code:
+          type: string
+        name:
+          type: string
+        allocation:
+          type: string
+        like_tax:
+          type: boolean
+        assemblable:
+          type: boolean
+        description:
+          type: string
+        commission_group_id:
+          type: string
+        mandatory:
+          type: boolean
+        discount_group_id:
+          type: string
+        external_name:
+          type: string
+        tax_group_id:
+          type: string
+        unit_of_measure:
+          type: string
+      required:
+        - id
+        - item_id
+        - name
+        - assemblable
+    OfferedAddOn:
+      type: object
+      properties:
+        default:
+          type: boolean
+        included:
+          type: boolean
+        mandatory:
+          type: boolean
+        position:
+          type: integer
+        price_list_id:
+          type: string
+        pricing_behavior_id:
+          type: string
+        add_on:
+          $ref: '#/components/schemas/AddOn'
+      required:
+        - default
+        - included
+        - mandatory
+        - position
+        - add_on
+    InvalidArguments:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: >-
+            A unique error code that should help in case of automated processing
+            of the response.
+          default: 1010
+        message:
+          type: string
+        details:
+          type: object
+          description: >-
+            Object with keys corresponding to invalid query parameter and values
+            containing more detail about the problems with that parameter.
+      required:
+        - code
+        - message
+        - details
+    Channel:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        currency_iso_code:
+          type: string
+          description: specifies the default currency from those in available_currencies
+        available_currencies:
+          type: string
+          description: A list of currencies separated by ";"
+        brand_id:
+          type: string
+        brand_name:
+          type: string
+      required:
+        - id
+        - code
+    Language:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        active:
+          type: boolean
+        iso_code:
+          type: string
+      required:
+        - id
+        - name
+        - active
+        - iso_code
+    TimePeriod:
+      type: object
+      properties:
+        id:
+          type: string
+        days_of_week:
+          type: array
+          items:
+            type: integer
+          description: >-
+            An array containing the days of week as numbers, with 0 = Monday, 1
+            = Tuesday, ... and 6 = Sunday.
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+      required:
+        - id
+        - days_of_week
+        - start_date
+        - end_date
+    PackageDeparture:
+      type: object
+      properties:
+        id:
+          type: string
+        active:
+          type: boolean
+        comments:
+          type: string
+        date:
+          type: string
+          format: date
+      required:
+        - id
+        - active
+        - comments
+        - date
+    PackageSchedule:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        time_periods:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimePeriod'
+      required:
+        - id
+        - name
+        - time_periods
+    PaginationPage:
+      type: object
+      properties:
+        count:
+          type: integer
+        limit:
+          type: integer
+        next:
+          type: string
+        next_token:
+          type: string
+        records:
+          type: array
+          items:
+            type: object
+      required:
+        - count
+        - limit
+        - next
+        - next_token
+        - records
+    ServiceLevel:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        active:
+          type: boolean
+      required:
+        - id
+        - name
+        - active

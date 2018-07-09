@@ -1509,6 +1509,11 @@ var n=this.pipeline.run(e.tokenizer(t)),r=new e.Vector,i=[],o=this._fields.reduc
               <ul class="toc-list-h2">
                 
                   <li>
+                    <a href="#getting-started" class="toc-h2 toc-link" data-title="Getting Started">Getting Started</a>
+                    
+                  </li>
+                
+                  <li>
                     <a href="#authentication" class="toc-h2 toc-link" data-title="Authentication">Authentication</a>
                     
                   </li>
@@ -1972,11 +1977,27 @@ var n=this.pipeline.run(e.tokenizer(t)),r=new e.Vector,i=[],o=this._fields.reduc
 <blockquote>
 <p>Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.</p>
 </blockquote>
-<p>This page presents the Kaptio REST API documentation. From now on we will refer
+<h2 id="getting-started">Getting Started</h2>
+<p>This guide presents common use cases for interacting with Kaptio Travel through Kaptio API and Kaptio SF-API. Kaptio API is standalone stateless REST API that can be implemented in any context and programming language. The Kaptio SF-API is a Salesforce native implementation available in Apex, an object oriented programming language that allows developers to execute flow and transaction control statements on Salesforce servers.
+From an implementation perspective, the best way to distinguish between the two is:</p>
+<ul>
+<li>
+<p>For any product resource, use Kaptio API. This will ensure highest
+performance for accessing rates, inventory and content from the Kaptio
+Travel system. The performance is boosted as Kaptio has built a caching
+layer (internally referred to as KT-Transform) to better support
+high-volume traffic.</p>
+</li>
+<li>
+<p>For any customer itinerary resource, use Kaptio SF API. This will allow you to create, read, update and delete anything related to a specifi customer itinerary that is sitting directly in the Kaptio Travel system.
+To make it easier for developers with limited Salesforce experience to develop against both product and customer itinerary resources, the Kaptio API offers a “relay” into the Kaptio SF API. This means that you only need to authenticate against Kaptio API, and for any customer itinerary resource related implementation you can use the relay service and bypass the need to become acquainted with Apex and Salesforce API authentication.
+This page presents the Kaptio REST API documentation. From now on we will refer
 to Kaptio REST API as 'KTAPI'. The system is based on REST principles and uses JSON
 as its serialization format. It is currently in beta state, which means some
 aspects might change and new paths/web service endpoints will be added in the
 future.</p>
+</li>
+</ul>
 <h2 id="authentication">Authentication</h2>
 <p>The API is completely stateless (no login/logout), hence all requests to the API
 must contain authentication information. We provide two authentication backends,
